@@ -128,6 +128,13 @@
         <button id="settings-button" class="menu-button">Settings</button>
     </div>
 
+    <div id="pause-screen" class="menu-screen hidden">
+        <h1>Game Paused</h1>
+        <button id="resume-button" class="menu-button">Resume</button>
+        <button id="restart-button" class="menu-button">Restart</button>
+        <button id="pause-settings-button" class="menu-button">Settings</button>
+    </div>
+
     <div id="settings-screen" class="menu-screen hidden">
         <h1>Settings</h1>
         <div class="settings-panel">
@@ -163,9 +170,13 @@
         window.onload = function() {
             // --- SCENE SETUP ---
             const startScreen = document.getElementById('start-screen');
+            const pauseScreen = document.getElementById('pause-screen');
             const settingsScreen = document.getElementById('settings-screen');
             const startButton = document.getElementById('start-button');
             const settingsButton = document.getElementById('settings-button');
+            const resumeButton = document.getElementById('resume-button');
+            const restartButton = document.getElementById('restart-button');
+            const pauseSettingsButton = document.getElementById('pause-settings-button');
             const backButton = document.getElementById('back-button');
             const canvas = document.getElementById('gameCanvas');
             const messageBox = document.getElementById('message-box');
@@ -176,7 +187,7 @@
             const keyboardLookRadio = document.getElementById('keyboard-look');
 
             const scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x87ceeb);
+            scene.background = new THREE.Color(0x80a0ff); 
 
             const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
@@ -198,7 +209,7 @@
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            const directionalLight = new THREE.DirectionalLight(0xfff8e1, 1.0); 
             directionalLight.position.set(50, 100, 50);
             directionalLight.castShadow = true;
             directionalLight.shadow.mapSize.width = 2048;
@@ -214,7 +225,7 @@
             // --- PLAYER SETUP ---
             const playerHeight = 1.8;
             const playerGeometry = new THREE.CapsuleGeometry(0.5, playerHeight, 10);
-            const playerMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, transparent: true, opacity: 0.0 });
+            const playerMaterial = new THREE.MeshStandardMaterial({ color: 0x39ff14 }); 
             const player = new THREE.Mesh(playerGeometry, playerMaterial);
             player.castShadow = true;
             scene.add(player);
@@ -224,16 +235,20 @@
             camera.position.set(0, playerHeight / 2, 0);
 
             const playerSpeed = 0.25;
-            const jumpForce = 0.5;
+            const jumpForce = 0.8; // Increased jump force
             const gravity = -0.03;
             let sensitivity = parseFloat(sensitivitySlider.value);
             let velocityY = 0;
             let onGround = false;
             let isDead = false;
+            let isPaused = false;
 
             const keyState = {};
             document.addEventListener('keydown', (event) => {
                 keyState[event.code] = true;
+                if (event.code === 'Escape' && !isDead) {
+                    togglePause();
+                }
             });
             document.addEventListener('keyup', (event) => {
                 keyState[event.code] = false;
@@ -246,6 +261,10 @@
 
             function lockMouse() {
                 canvas.requestPointerLock();
+            }
+
+            function unlockMouse() {
+                document.exitPointerLock();
             }
             
             document.addEventListener('pointerlockchange', () => {
@@ -266,10 +285,14 @@
 
             // --- GAME OBJECTS ---
             const platforms = [];
+            const platformColors = [
+                0x3498db, 0x2ecc71, 0x9b59b6, 0xf1c40f, 0xe74c3c, 0x1abc9c, 0x95a5a6, 0xff5722, 0x00bcd4, 0x7b1fa2
+            ];
+            let colorIndex = 0;
 
             // Ground
             const groundGeometry = new THREE.BoxGeometry(100, 1, 100);
-            const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x4CAF50 });
+            const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x27ae60 }); 
             const ground = new THREE.Mesh(groundGeometry, groundMaterial);
             ground.position.y = -0.5;
             ground.receiveShadow = true;
@@ -277,7 +300,9 @@
             platforms.push(ground);
 
             // Function to create a platform
-            function createPlatform(x, y, z, width = 5, height = 1, depth = 5, color = 0x808080) {
+            function createPlatform(x, y, z, width = 5, height = 1, depth = 5) {
+                const color = platformColors[colorIndex % platformColors.length];
+                colorIndex++;
                 const geometry = new THREE.BoxGeometry(width, height, depth);
                 const material = new THREE.MeshStandardMaterial({ color: color });
                 const platform = new THREE.Mesh(geometry, material);
@@ -288,45 +313,45 @@
                 platforms.push(platform);
                 return platform;
             }
+            
+            // The first platform to jump to, away from the ground
+            const firstPlatform = createPlatform(0, 1, -15, 8, 1, 8); 
 
-            // Create parkour course with jumpable spaces
-            // The starting platform
-            const startPlatform = createPlatform(0, 0, -10, 8, 1, 8, 0x3498db); // Blue starting platform
-
-            // Simple jumps
-            createPlatform(0, 1, -20, 6, 1, 6);
-            createPlatform(-5, 2, -28, 6, 1, 6);
-            createPlatform(5, 3, -36, 4, 1, 4);
+            // Simple jumps - moved up
+            createPlatform(0, 2.5, -25, 6, 1, 6);
+            createPlatform(-5, 4, -33, 6, 1, 6);
+            createPlatform(5, 5.5, -41, 4, 1, 4);
             
-            // Higher jumps
-            createPlatform(5, 5, -45, 3, 1, 3);
-            createPlatform(0, 7, -52, 2, 1, 2);
-            createPlatform(-10, 9, -58, 2, 1, 2);
+            // Higher jumps - moved up
+            createPlatform(5, 7, -50, 3, 1, 3);
+            createPlatform(0, 9, -57, 2, 1, 2);
+            createPlatform(-10, 11, -63, 2, 1, 2);
             
-            // Long and narrow jumps
-            createPlatform(-18, 11, -65, 2, 1, 2, 0xe74c3c);
-            createPlatform(-25, 13, -75, 2, 1, 2, 0x1abc9c);
-            createPlatform(-30, 15, -85, 4, 1, 4, 0xf1c40f);
+            // Long and narrow jumps - moved up
+            createPlatform(-18, 13, -70, 2, 1, 2);
+            createPlatform(-25, 15, -80, 2, 1, 2);
+            createPlatform(-30, 17, -90, 4, 1, 4);
             
-            // Winding path
-            createPlatform(-20, 17, -95, 3, 1, 3);
-            createPlatform(0, 19, -105, 3, 1, 3);
-            createPlatform(15, 21, -115, 3, 1, 3, 0x9b59b6);
+            // Winding path - moved up
+            createPlatform(-20, 19, -100, 3, 1, 3);
+            createPlatform(0, 21, -110, 3, 1, 3);
+            createPlatform(15, 23, -120, 3, 1, 3);
             
-            // New levels
-            createPlatform(25, 23, -120, 3, 1, 3);
-            createPlatform(30, 25, -125, 3, 1, 3);
-            createPlatform(35, 27, -130, 3, 1, 3);
-            createPlatform(40, 29, -135, 4, 1, 4, 0xff5722);
-            createPlatform(45, 30, -145, 2, 1, 2);
-            createPlatform(50, 32, -155, 2, 1, 2);
-            createPlatform(55, 35, -165, 3, 1, 3, 0x00bcd4);
-            createPlatform(60, 38, -175, 4, 1, 4);
-            createPlatform(50, 40, -185, 5, 1, 5);
-            createPlatform(40, 42, -195, 6, 1, 6);
+            // New levels - moved up
+            createPlatform(25, 25, -125, 3, 1, 3);
+            createPlatform(30, 27, -130, 3, 1, 3);
+            createPlatform(35, 29, -135, 3, 1, 3);
+            createPlatform(40, 31, -140, 4, 1, 4);
+            createPlatform(45, 32, -150, 2, 1, 2);
+            createPlatform(50, 34, -160, 2, 1, 2);
+            createPlatform(55, 37, -170, 3, 1, 3);
+            createPlatform(60, 40, -180, 4, 1, 4);
+            createPlatform(50, 42, -190, 5, 1, 5);
+            createPlatform(40, 44, -200, 6, 1, 6);
             
-            // The final winning platform
-            const finalPlatform = createPlatform(30, 45, -205, 5, 1, 5, 0xF44336); // Red winning platform
+            // The final winning platform (keeping the red color for clarity)
+            const finalPlatform = createPlatform(30, 47, -210, 5, 1, 5);
+            finalPlatform.material.color.set(0xF44336);
 
             // --- GAME LOGIC ---
             function checkCollision() {
@@ -336,40 +361,64 @@
                 for (const platform of platforms) {
                     const platformWidth = platform.geometry.parameters.width;
                     const platformDepth = platform.geometry.parameters.depth;
-                    const platformY = platform.position.y + platform.geometry.parameters.height / 2;
+                    const platformTopY = platform.position.y + platform.geometry.parameters.height / 2;
                     
-                    // Check if player's feet are above the platform and within its horizontal bounds
-                    if (velocityY <= 0 && 
-                        playerFeetY >= platformY - 0.1 && 
-                        playerFeetY <= platformY + 0.1) {
+                    const minX = platform.position.x - platformWidth / 2;
+                    const maxX = platform.position.x + platformWidth / 2;
+                    const minZ = platform.position.z - platformDepth / 2;
+                    const maxZ = platform.position.z + platformDepth / 2;
+                    
+                    // Check for vertical collision from above.
+                    if (velocityY <= 0 &&
+                        player.position.x > minX && player.position.x < maxX &&
+                        player.position.z > minZ && player.position.z < maxZ) {
                         
-                        const minX = platform.position.x - platformWidth / 2;
-                        const maxX = platform.position.x + platformWidth / 2;
-                        const minZ = platform.position.z - platformDepth / 2;
-                        const maxZ = platform.position.z + platformDepth / 2;
-
-                        if (player.position.x > minX && player.position.x < maxX &&
-                            player.position.z > minZ && player.position.z < maxZ) {
-                            
-                            // Snap player to the platform
-                            player.position.y = platformY + playerHeight / 2;
+                        if (playerFeetY > platformTopY - 0.5 && playerFeetY <= platformTopY + 0.1) {
+                            // Snap player to the platform's top
+                            player.position.y = platformTopY + playerHeight / 2;
                             velocityY = 0;
                             onGround = true;
-                            return;
+                            return; // Stop checking after a successful collision
                         }
+                    }
+
+                    // --- New Edge Collision Logic ---
+                    // This section checks for horizontal collisions and prevents the player from walking off the edge.
+                    
+                    // Check if player is on the platform
+                    const onPlatformHorizontally = (
+                        player.position.x >= minX - 0.5 && player.position.x <= maxX + 0.5 &&
+                        player.position.z >= minZ - 0.5 && player.position.z <= maxZ + 0.5
+                    );
+
+                    // Check if player's feet are at or near the platform's height.
+                    const isNearPlatformVertically = (
+                        playerFeetY >= platformTopY - 0.1 && playerFeetY <= platformTopY + 0.1
+                    );
+
+                    if (onPlatformHorizontally && isNearPlatformVertically) {
+                        // Clamp the player's position to the platform boundaries
+                        player.position.x = Math.max(minX + 0.5, Math.min(maxX - 0.5, player.position.x));
+                        player.position.z = Math.max(minZ + 0.5, Math.min(maxZ - 0.5, player.position.z));
                     }
                 }
             }
 
             function restartGame() {
                 isDead = false;
-                player.position.set(startPlatform.position.x, startPlatform.position.y + playerHeight, startPlatform.position.z);
+                isPaused = false;
+                // Place the player back on the green ground at the start
+                player.position.set(0, playerHeight / 2, 0); 
                 rotationX = 0;
                 rotationY = 0;
                 camera.rotation.x = rotationX;
                 player.rotation.y = rotationY;
                 velocityY = 0;
                 messageBox.style.display = 'none';
+                pauseScreen.classList.add('hidden');
+                
+                // Restart the animation loop
+                animate();
             }
 
             // Listen for restart key
@@ -384,13 +433,26 @@
                 startScreen.classList.add('hidden');
                 messageBox.style.display = 'none';
                 
-                // Only lock the mouse if the mouse-look option is selected
                 if (mouseLookRadio.checked) {
                     lockMouse();
                 }
 
                 restartGame();
-                animate();
+            }
+
+            function togglePause() {
+                if (!isDead) {
+                    isPaused = !isPaused;
+                    if (isPaused) {
+                        pauseScreen.classList.remove('hidden');
+                        unlockMouse();
+                    } else {
+                        pauseScreen.classList.add('hidden');
+                        if (mouseLookRadio.checked) {
+                            lockMouse();
+                        }
+                    }
+                }
             }
 
             // --- MENU NAVIGATION ---
@@ -401,7 +463,19 @@
             });
             backButton.addEventListener('click', () => {
                 settingsScreen.classList.add('hidden');
-                startScreen.classList.remove('hidden');
+                // The correct screen to go back to depends on where we came from
+                if (isPaused) {
+                    pauseScreen.classList.remove('hidden');
+                } else {
+                    startScreen.classList.remove('hidden');
+                }
+            });
+
+            resumeButton.addEventListener('click', togglePause);
+            restartButton.addEventListener('click', restartGame);
+            pauseSettingsButton.addEventListener('click', () => {
+                pauseScreen.classList.add('hidden');
+                settingsScreen.classList.remove('hidden');
             });
 
             // Update sensitivity from slider
@@ -413,7 +487,7 @@
             function animate() {
                 requestAnimationFrame(animate);
 
-                if (isDead) {
+                if (isDead || isPaused) {
                     renderer.render(scene, camera);
                     return;
                 }
@@ -494,6 +568,7 @@
                         isDead = true;
                         winMessage.textContent = 'You Win!';
                         messageBox.style.display = 'block';
+                        unlockMouse();
                     }
                 }
                 
@@ -502,6 +577,7 @@
                     isDead = true;
                     winMessage.textContent = 'Game Over!';
                     messageBox.style.display = 'block';
+                    unlockMouse();
                 }
 
                 renderer.render(scene, camera);
