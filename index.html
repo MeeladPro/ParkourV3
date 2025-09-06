@@ -108,6 +108,10 @@
             align-items: center;
             margin-bottom: 10px;
         }
+        
+        .settings-item label, .settings-item input[type="checkbox"] {
+            cursor: pointer;
+        }
 
         .settings-item label {
             font-size: 16px;
@@ -142,7 +146,7 @@
                 <h2>Looking</h2>
                 <div class="settings-item">
                     <label for="sensitivity-slider">Sensitivity</label>
-                    <input type="range" id="sensitivity-slider" class="slider" min="0.0005" max="0.005" step="0.0001" value="0.002">
+                    <input type="range" id="sensitivity-slider" class="slider" min="0.0005" max="0.01" step="0.0001" value="0.004">
                 </div>
                 <div class="settings-item">
                     <label>Controls</label>
@@ -154,6 +158,20 @@
                         <input type="radio" id="keyboard-look" name="look-option" value="keyboard">
                         <label for="keyboard-look">Keyboard</label>
                     </div>
+                </div>
+            </div>
+            <div class="settings-group">
+                <h2>Speed</h2>
+                <div class="settings-item">
+                    <label for="tick-speed-slider">Tick Speed</label>
+                    <input type="range" id="tick-speed-slider" class="slider" min="0.5" max="2.0" step="0.1" value="1.0">
+                </div>
+            </div>
+            <div class="settings-group">
+                <h2>View</h2>
+                <div class="settings-item">
+                    <label for="under-feet-checkbox">Show Under-Feet View</label>
+                    <input type="checkbox" id="under-feet-checkbox">
                 </div>
             </div>
         </div>
@@ -183,13 +201,19 @@
             const winMessage = document.getElementById('win-message');
             
             const sensitivitySlider = document.getElementById('sensitivity-slider');
+            const tickSpeedSlider = document.getElementById('tick-speed-slider');
             const mouseLookRadio = document.getElementById('mouse-look');
             const keyboardLookRadio = document.getElementById('keyboard-look');
+            const underFeetCheckbox = document.getElementById('under-feet-checkbox');
 
             const scene = new THREE.Scene();
             scene.background = new THREE.Color(0x80a0ff); 
 
+            // The main game camera
             const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // The second camera for the under-feet view
+            const underFeetCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
 
             const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -230,18 +254,24 @@
             player.castShadow = true;
             scene.add(player);
             
-            // Attach camera to the player
+            // Attach cameras to the player
             player.add(camera);
             camera.position.set(0, playerHeight / 2, 0);
+            
+            player.add(underFeetCamera);
+            underFeetCamera.position.set(0, -playerHeight / 2, 0);
+            underFeetCamera.rotation.x = -Math.PI / 2; // Look straight down
 
             const playerSpeed = 0.25;
-            const jumpForce = 0.8; // Increased jump force
+            const jumpForce = 0.65;
             const gravity = -0.03;
             let sensitivity = parseFloat(sensitivitySlider.value);
+            let tickSpeedMultiplier = parseFloat(tickSpeedSlider.value);
             let velocityY = 0;
             let onGround = false;
             let isDead = false;
             let isPaused = false;
+            let showUnderFeetView = underFeetCheckbox.checked;
 
             const keyState = {};
             document.addEventListener('keydown', (event) => {
@@ -357,49 +387,50 @@
             function checkCollision() {
                 onGround = false;
                 const playerFeetY = player.position.y - playerHeight / 2;
+                const playerTopY = player.position.y + playerHeight / 2;
 
                 for (const platform of platforms) {
                     const platformWidth = platform.geometry.parameters.width;
                     const platformDepth = platform.geometry.parameters.depth;
-                    const platformTopY = platform.position.y + platform.geometry.parameters.height / 2;
+                    const platformHeight = platform.geometry.parameters.height;
+                    const platformTopY = platform.position.y + platformHeight / 2;
+                    const platformBottomY = platform.position.y - platformHeight / 2;
                     
                     const minX = platform.position.x - platformWidth / 2;
                     const maxX = platform.position.x + platformWidth / 2;
                     const minZ = platform.position.z - platformDepth / 2;
                     const maxZ = platform.position.z + platformDepth / 2;
                     
-                    // Check for vertical collision from above.
-                    if (velocityY <= 0 &&
-                        player.position.x > minX && player.position.x < maxX &&
-                        player.position.z > minZ && player.position.z < maxZ) {
+                    // Check for overlap in all axes
+                    const xOverlap = (player.position.x + 0.5) > minX && (player.position.x - 0.5) < maxX;
+                    const zOverlap = (player.position.z + 0.5) > minZ && (player.position.z - 0.5) < maxZ;
+                    const yOverlap = playerTopY > platformBottomY && playerFeetY < platformTopY;
+
+                    if (xOverlap && zOverlap && yOverlap) {
+                        // Collision detected, now resolve it
                         
-                        if (playerFeetY > platformTopY - 0.5 && playerFeetY <= platformTopY + 0.1) {
+                        // Check for vertical collision from above (landing on platform)
+                        if (velocityY <= 0 && playerFeetY > platformTopY - 0.5) {
                             // Snap player to the platform's top
                             player.position.y = platformTopY + playerHeight / 2;
                             velocityY = 0;
                             onGround = true;
-                            return; // Stop checking after a successful collision
+                            return; // Stop checking after a successful landing
                         }
-                    }
 
-                    // --- New Edge Collision Logic ---
-                    // This section checks for horizontal collisions and prevents the player from walking off the edge.
-                    
-                    // Check if player is on the platform
-                    const onPlatformHorizontally = (
-                        player.position.x >= minX - 0.5 && player.position.x <= maxX + 0.5 &&
-                        player.position.z >= minZ - 0.5 && player.position.z <= maxZ + 0.5
-                    );
+                        // Check for horizontal collision (hitting a side)
+                        // This prevents the player from moving through the platform
+                        const dx = Math.abs(player.position.x - platform.position.x) - (platformWidth / 2 + 0.5);
+                        const dz = Math.abs(player.position.z - platform.position.z) - (platformDepth / 2 + 0.5);
 
-                    // Check if player's feet are at or near the platform's height.
-                    const isNearPlatformVertically = (
-                        playerFeetY >= platformTopY - 0.1 && playerFeetY <= platformTopY + 0.1
-                    );
-
-                    if (onPlatformHorizontally && isNearPlatformVertically) {
-                        // Clamp the player's position to the platform boundaries
-                        player.position.x = Math.max(minX + 0.5, Math.min(maxX - 0.5, player.position.x));
-                        player.position.z = Math.max(minZ + 0.5, Math.min(maxZ - 0.5, player.position.z));
+                        // Find the axis with the smallest overlap to determine the collision normal
+                        if (Math.abs(dx) > Math.abs(dz)) {
+                            // Collision is on the Z axis
+                            player.position.z -= player.position.z > platform.position.z ? dz : -dz;
+                        } else {
+                            // Collision is on the X axis
+                            player.position.x -= player.position.x > platform.position.x ? dx : -dx;
+                        }
                     }
                 }
             }
@@ -483,6 +514,15 @@
                 sensitivity = parseFloat(event.target.value);
             });
 
+            // Update tick speed from slider
+            tickSpeedSlider.addEventListener('input', (event) => {
+                tickSpeedMultiplier = parseFloat(event.target.value);
+            });
+            
+            underFeetCheckbox.addEventListener('change', (event) => {
+                showUnderFeetView = event.target.checked;
+            });
+
             // --- MAIN ANIMATION LOOP ---
             function animate() {
                 requestAnimationFrame(animate);
@@ -494,7 +534,7 @@
 
                 // Apply gravity
                 if (!onGround) {
-                    velocityY += gravity;
+                    velocityY += gravity * tickSpeedMultiplier;
                 }
                 player.position.y += velocityY;
 
@@ -555,7 +595,7 @@
 
                 // Handle jump input
                 if (keyState['Space'] && onGround) {
-                    velocityY = jumpForce;
+                    velocityY = jumpForce * tickSpeedMultiplier;
                     onGround = false;
                 }
                 
@@ -580,9 +620,20 @@
                     unlockMouse();
                 }
 
+                // --- Rendering ---
+                // Render the main view first
+                renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
                 renderer.render(scene, camera);
+
+                // Render the under-feet view if enabled
+                if (showUnderFeetView) {
+                    const viewSize = 200;
+                    renderer.setViewport(window.innerWidth - viewSize - 20, 20, viewSize, viewSize);
+                    renderer.render(scene, underFeetCamera);
+                }
             }
         };
     </script>
 </body>
 </html>
+
