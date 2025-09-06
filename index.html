@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Parkour Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #f0f0f0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #message-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            font-size: 24px;
+            text-align: center;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+            display: none;
+            z-index: 10;
+        }
+
+        #win-message {
+            color: #4CAF50;
+        }
+        
+        .menu-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            transition: opacity 0.3s ease;
+        }
+
+        .menu-screen.hidden {
+            display: none;
+        }
+
+        .menu-screen h1 {
+            color: #fff;
+            font-size: 48px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            margin-bottom: 20px;
+        }
+
+        .menu-button {
+            padding: 15px 30px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #fff;
+            background-color: #3498db;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.1s ease;
+            margin: 10px 0;
+        }
+
+        .menu-button:hover {
+            background-color: #2980b9;
+        }
+
+        .menu-button:active {
+            transform: scale(0.98);
+        }
+
+        .settings-panel {
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            color: #fff;
+            width: 300px;
+        }
+
+        .settings-group {
+            margin-bottom: 20px;
+        }
+
+        .settings-group h2 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .settings-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .settings-item label {
+            font-size: 16px;
+        }
+        
+        .slider {
+            width: 150px;
+            cursor: pointer;
+        }
+    </style>
+    <!-- Three.js library for 3D rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+</head>
+<body>
+    <div id="start-screen" class="menu-screen">
+        <h1>MeeladPro Parkour V3</h1>
+        <button id="start-button" class="menu-button">Start Game</button>
+        <button id="settings-button" class="menu-button">Settings</button>
+    </div>
+
+    <div id="settings-screen" class="menu-screen hidden">
+        <h1>Settings</h1>
+        <div class="settings-panel">
+            <div class="settings-group">
+                <h2>Looking</h2>
+                <div class="settings-item">
+                    <label for="sensitivity-slider">Sensitivity</label>
+                    <input type="range" id="sensitivity-slider" class="slider" min="0.0005" max="0.005" step="0.0001" value="0.002">
+                </div>
+                <div class="settings-item">
+                    <label>Controls</label>
+                    <div>
+                        <input type="radio" id="mouse-look" name="look-option" value="mouse" checked>
+                        <label for="mouse-look">Mouse</label>
+                    </div>
+                    <div>
+                        <input type="radio" id="keyboard-look" name="look-option" value="keyboard">
+                        <label for="keyboard-look">Keyboard</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <button id="back-button" class="menu-button">Back</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+    <div id="message-box">
+        <span id="win-message"></span>
+        <p>Press `R` to Restart</p>
+    </div>
+
+    <script>
+        window.onload = function() {
+            // --- SCENE SETUP ---
+            const startScreen = document.getElementById('start-screen');
+            const settingsScreen = document.getElementById('settings-screen');
+            const startButton = document.getElementById('start-button');
+            const settingsButton = document.getElementById('settings-button');
+            const backButton = document.getElementById('back-button');
+            const canvas = document.getElementById('gameCanvas');
+            const messageBox = document.getElementById('message-box');
+            const winMessage = document.getElementById('win-message');
+            
+            const sensitivitySlider = document.getElementById('sensitivity-slider');
+            const mouseLookRadio = document.getElementById('mouse-look');
+            const keyboardLookRadio = document.getElementById('keyboard-look');
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87ceeb);
+
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+            const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            // Handle window resizing
+            window.addEventListener('resize', () => {
+                const newWidth = window.innerWidth;
+                const newHeight = window.innerHeight;
+                renderer.setSize(newWidth, newHeight);
+                camera.aspect = newWidth / newHeight;
+                camera.updateProjectionMatrix();
+            });
+
+            // --- LIGHTING ---
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(50, 100, 50);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 500;
+            directionalLight.shadow.camera.left = -100;
+            directionalLight.shadow.camera.right = 100;
+            directionalLight.shadow.camera.top = 100;
+            directionalLight.shadow.camera.bottom = -100;
+            scene.add(directionalLight);
+
+            // --- PLAYER SETUP ---
+            const playerHeight = 1.8;
+            const playerGeometry = new THREE.CapsuleGeometry(0.5, playerHeight, 10);
+            const playerMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, transparent: true, opacity: 0.0 });
+            const player = new THREE.Mesh(playerGeometry, playerMaterial);
+            player.castShadow = true;
+            scene.add(player);
+            
+            // Attach camera to the player
+            player.add(camera);
+            camera.position.set(0, playerHeight / 2, 0);
+
+            const playerSpeed = 0.25;
+            const jumpForce = 0.5;
+            const gravity = -0.03;
+            let sensitivity = parseFloat(sensitivitySlider.value);
+            let velocityY = 0;
+            let onGround = false;
+            let isDead = false;
+
+            const keyState = {};
+            document.addEventListener('keydown', (event) => {
+                keyState[event.code] = true;
+            });
+            document.addEventListener('keyup', (event) => {
+                keyState[event.code] = false;
+            });
+
+            // Mouse look controls
+            let isMouseLocked = false;
+            let rotationX = 0;
+            let rotationY = 0;
+
+            function lockMouse() {
+                canvas.requestPointerLock();
+            }
+            
+            document.addEventListener('pointerlockchange', () => {
+                isMouseLocked = document.pointerLockElement === canvas;
+            });
+            document.addEventListener('mousemove', (event) => {
+                if (isMouseLocked && mouseLookRadio.checked) {
+                    rotationX -= event.movementY * sensitivity;
+                    rotationY -= event.movementX * sensitivity;
+
+                    // Limit vertical rotation to prevent flipping
+                    rotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotationX));
+                    
+                    camera.rotation.x = rotationX;
+                    player.rotation.y = rotationY;
+                }
+            });
+
+            // --- GAME OBJECTS ---
+            const platforms = [];
+
+            // Ground
+            const groundGeometry = new THREE.BoxGeometry(100, 1, 100);
+            const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x4CAF50 });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.position.y = -0.5;
+            ground.receiveShadow = true;
+            scene.add(ground);
+            platforms.push(ground);
+
+            // Function to create a platform
+            function createPlatform(x, y, z, width = 5, height = 1, depth = 5, color = 0x808080) {
+                const geometry = new THREE.BoxGeometry(width, height, depth);
+                const material = new THREE.MeshStandardMaterial({ color: color });
+                const platform = new THREE.Mesh(geometry, material);
+                platform.position.set(x, y + height / 2, z);
+                platform.castShadow = true;
+                platform.receiveShadow = true;
+                scene.add(platform);
+                platforms.push(platform);
+                return platform;
+            }
+
+            // Create parkour course with jumpable spaces
+            // The starting platform
+            const startPlatform = createPlatform(0, 0, -10, 8, 1, 8, 0x3498db); // Blue starting platform
+
+            // Simple jumps
+            createPlatform(0, 1, -20, 6, 1, 6);
+            createPlatform(-5, 2, -28, 6, 1, 6);
+            createPlatform(5, 3, -36, 4, 1, 4);
+            
+            // Higher jumps
+            createPlatform(5, 5, -45, 3, 1, 3);
+            createPlatform(0, 7, -52, 2, 1, 2);
+            createPlatform(-10, 9, -58, 2, 1, 2);
+            
+            // Long and narrow jumps
+            createPlatform(-18, 11, -65, 2, 1, 2, 0xe74c3c);
+            createPlatform(-25, 13, -75, 2, 1, 2, 0x1abc9c);
+            createPlatform(-30, 15, -85, 4, 1, 4, 0xf1c40f);
+            
+            // Winding path
+            createPlatform(-20, 17, -95, 3, 1, 3);
+            createPlatform(0, 19, -105, 3, 1, 3);
+            createPlatform(15, 21, -115, 3, 1, 3, 0x9b59b6);
+            
+            // New levels
+            createPlatform(25, 23, -120, 3, 1, 3);
+            createPlatform(30, 25, -125, 3, 1, 3);
+            createPlatform(35, 27, -130, 3, 1, 3);
+            createPlatform(40, 29, -135, 4, 1, 4, 0xff5722);
+            createPlatform(45, 30, -145, 2, 1, 2);
+            createPlatform(50, 32, -155, 2, 1, 2);
+            createPlatform(55, 35, -165, 3, 1, 3, 0x00bcd4);
+            createPlatform(60, 38, -175, 4, 1, 4);
+            createPlatform(50, 40, -185, 5, 1, 5);
+            createPlatform(40, 42, -195, 6, 1, 6);
+            
+            // The final winning platform
+            const finalPlatform = createPlatform(30, 45, -205, 5, 1, 5, 0xF44336); // Red winning platform
+
+            // --- GAME LOGIC ---
+            function checkCollision() {
+                onGround = false;
+                const playerFeetY = player.position.y - playerHeight / 2;
+
+                for (const platform of platforms) {
+                    const platformWidth = platform.geometry.parameters.width;
+                    const platformDepth = platform.geometry.parameters.depth;
+                    const platformY = platform.position.y + platform.geometry.parameters.height / 2;
+                    
+                    // Check if player's feet are above the platform and within its horizontal bounds
+                    if (velocityY <= 0 && 
+                        playerFeetY >= platformY - 0.1 && 
+                        playerFeetY <= platformY + 0.1) {
+                        
+                        const minX = platform.position.x - platformWidth / 2;
+                        const maxX = platform.position.x + platformWidth / 2;
+                        const minZ = platform.position.z - platformDepth / 2;
+                        const maxZ = platform.position.z + platformDepth / 2;
+
+                        if (player.position.x > minX && player.position.x < maxX &&
+                            player.position.z > minZ && player.position.z < maxZ) {
+                            
+                            // Snap player to the platform
+                            player.position.y = platformY + playerHeight / 2;
+                            velocityY = 0;
+                            onGround = true;
+                            return;
+                        }
+                    }
+                }
+            }
+
+            function restartGame() {
+                isDead = false;
+                player.position.set(startPlatform.position.x, startPlatform.position.y + playerHeight, startPlatform.position.z);
+                rotationX = 0;
+                rotationY = 0;
+                camera.rotation.x = rotationX;
+                player.rotation.y = rotationY;
+                velocityY = 0;
+                messageBox.style.display = 'none';
+            }
+
+            // Listen for restart key
+            document.addEventListener('keydown', (event) => {
+                if (event.code === 'KeyR' && isDead) {
+                    restartGame();
+                }
+            });
+
+            // Start game function
+            function startGame() {
+                startScreen.classList.add('hidden');
+                messageBox.style.display = 'none';
+                
+                // Only lock the mouse if the mouse-look option is selected
+                if (mouseLookRadio.checked) {
+                    lockMouse();
+                }
+
+                restartGame();
+                animate();
+            }
+
+            // --- MENU NAVIGATION ---
+            startButton.addEventListener('click', startGame);
+            settingsButton.addEventListener('click', () => {
+                startScreen.classList.add('hidden');
+                settingsScreen.classList.remove('hidden');
+            });
+            backButton.addEventListener('click', () => {
+                settingsScreen.classList.add('hidden');
+                startScreen.classList.remove('hidden');
+            });
+
+            // Update sensitivity from slider
+            sensitivitySlider.addEventListener('input', (event) => {
+                sensitivity = parseFloat(event.target.value);
+            });
+
+            // --- MAIN ANIMATION LOOP ---
+            function animate() {
+                requestAnimationFrame(animate);
+
+                if (isDead) {
+                    renderer.render(scene, camera);
+                    return;
+                }
+
+                // Apply gravity
+                if (!onGround) {
+                    velocityY += gravity;
+                }
+                player.position.y += velocityY;
+
+                // Handle movement input
+                const direction = new THREE.Vector3();
+                const forward = new THREE.Vector3();
+                const right = new THREE.Vector3();
+                
+                // Get the player's world direction for movement
+                player.getWorldDirection(forward);
+                forward.y = 0;
+                forward.normalize();
+                
+                right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
+
+                if (keyState['KeyW']) {
+                    direction.sub(forward);
+                }
+                if (keyState['KeyS']) {
+                    direction.add(forward);
+                }
+                if (keyState['KeyA']) {
+                    direction.add(right);
+                }
+                if (keyState['KeyD']) {
+                    direction.sub(right);
+                }
+
+                if (direction.length() > 0) {
+                    direction.normalize().multiplyScalar(playerSpeed);
+                    player.position.add(direction);
+                }
+
+                // Handle look input
+                if (isMouseLocked && mouseLookRadio.checked) {
+                    // This is handled by the mousemove event listener
+                }
+
+                if (keyboardLookRadio.checked) {
+                    if (keyState['ArrowUp']) {
+                        rotationX -= sensitivity * 10;
+                    }
+                    if (keyState['ArrowDown']) {
+                        rotationX += sensitivity * 10;
+                    }
+                    if (keyState['ArrowLeft']) {
+                        rotationY += sensitivity * 10;
+                    }
+                    if (keyState['ArrowRight']) {
+                        rotationY -= sensitivity * 10;
+                    }
+                }
+
+                // Apply camera rotation
+                rotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotationX));
+                camera.rotation.x = rotationX;
+                player.rotation.y = rotationY;
+
+                // Handle jump input
+                if (keyState['Space'] && onGround) {
+                    velocityY = jumpForce;
+                    onGround = false;
+                }
+                
+                checkCollision();
+
+                // Check for winning condition
+                const distToFinal = player.position.distanceTo(finalPlatform.position);
+                if (distToFinal < 3 && player.position.y > finalPlatform.position.y) {
+                    if (!isDead) {
+                        isDead = true;
+                        winMessage.textContent = 'You Win!';
+                        messageBox.style.display = 'block';
+                    }
+                }
+                
+                // Check for falling off the world
+                if (player.position.y < -50 && !isDead) {
+                    isDead = true;
+                    winMessage.textContent = 'Game Over!';
+                    messageBox.style.display = 'block';
+                }
+
+                renderer.render(scene, camera);
+            }
+        };
+    </script>
+</body>
+</html>
